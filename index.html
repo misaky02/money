@@ -590,7 +590,7 @@
         <button class="type-btn" id="btnExp" onclick="setType('expense')">支出</button>
       </div>
       <div class="form-row">
-        <div class="fg">
+        <div class="fg" style="flex:0 0 110px">
           <label>日付</label>
           <input type="date" id="txDate">
         </div>
@@ -610,6 +610,7 @@
           <option>au</option>
           <option>Paidy</option>
           <option>セブン</option>
+          <option>西日本シティ銀行</option>
         </select>
       </div>
       <div class="fg" style="margin-bottom:8px;display:none" id="fieldSource">
@@ -630,6 +631,8 @@
     <div class="tab-row">
       <button class="tab active" onclick="switchTab('list', this)">明細</button>
       <button class="tab" onclick="switchTab('chart', this)">グラフ</button>
+      <button class="tab" onclick="switchTab('debt', this)">リボ・キャッシング</button>
+      <button class="tab" onclick="switchTab('assets', this)">資産</button>
     </div>
     <div id="mainContent">
       <div class="tx-list" id="txList"></div>
@@ -670,6 +673,7 @@
           <option>au</option>
           <option>Paidy</option>
           <option>セブン</option>
+          <option>西日本シティ銀行</option>
         </select>
       </div>
       <div class="fg">
@@ -680,12 +684,19 @@
         </select>
       </div>
     </div>
+    <div class="fg" style="margin-bottom:8px">
+      <label>返済方式</label>
+      <select id="dPayMethod">
+        <option value="fixed">定額方式（毎月一定額）</option>
+        <option value="slide">残高スライド方式（残高に応じて変動）</option>
+      </select>
+    </div>
     <div class="form-row">
       <div class="fg">
         <label>現在の残高 ¥</label>
         <input type="number" id="dBalance" placeholder="0" min="0">
       </div>
-      <div class="fg">
+      <div class="fg" id="dMonthlyWrap">
         <label>毎月の返済額 ¥</label>
         <input type="number" id="dMonthly" placeholder="0" min="0">
       </div>
@@ -717,7 +728,25 @@
   </div>
 </div>
 
-<!-- Simulation Modal -->
+<!-- Asset Edit Modal -->
+<div class="overlay" id="assetOverlay">
+  <div class="modal">
+    <h2 id="assetModalTitle">残高を更新</h2>
+    <p id="assetModalDesc" style="font-size:13px;color:var(--text2);margin-bottom:14px"></p>
+    <div class="fg" style="margin-bottom:8px">
+      <label id="assetModalLabel">残高 ¥</label>
+      <input type="number" id="assetInput" placeholder="0" min="0">
+    </div>
+    <div class="fg" style="margin-bottom:0" id="assetNoteWrap">
+      <label>メモ（任意）</label>
+      <input type="text" id="assetNote" placeholder="">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeAssetModal()">キャンセル</button>
+      <button class="btn-save mint" onclick="saveAsset()">更新</button>
+    </div>
+  </div>
+</div>
 <div class="overlay" id="simOverlay">
   <div class="modal sim-modal">
     <h2>返済シミュレーション 📊</h2>
@@ -960,8 +989,14 @@ function switchTab(t, btn) {
   btn.classList.add('active');
   if (t === 'list') {
     document.getElementById('mainContent').innerHTML = '<div class="tx-list" id="txList"></div>';
+    render();
+  } else if (t === 'chart') {
+    render();
+  } else if (t === 'debt') {
+    renderDebtTab();
+  } else if (t === 'assets') {
+    renderAssetTab();
   }
-  render();
 }
 
 // BUDGET MODAL
@@ -1012,15 +1047,27 @@ function closeDebtModal() { document.getElementById('debtOverlay').classList.rem
 function addDebt() {
   const card = document.getElementById('dCard').value;
   const type = document.getElementById('dType').value;
+  const payMethod = document.getElementById('dPayMethod').value;
   const balance = parseFloat(document.getElementById('dBalance').value);
   const monthly = parseFloat(document.getElementById('dMonthly').value) || 0;
   const rate = parseFloat(document.getElementById('dRate').value) || 0;
   if (isNaN(balance) || balance <= 0) return;
-  debts.push({ id: Date.now(), name: card + (type === 'ribo' ? ' リボ' : ' キャッシング'), card, type, original: balance, remaining: balance, monthly, rate });
+  debts.push({ id: Date.now(), card, type, payMethod, original: balance, remaining: balance, monthly, rate });
   closeDebtModal();
   renderDebts();
+  if (tab === 'debt') renderDebtTab();
 }
-function deleteDebt(id) { debts = debts.filter(d => d.id !== id); renderDebts(); }
+function deleteDebt(id) { debts = debts.filter(d => d.id !== id); renderDebts(); if (tab === 'debt') renderDebtTab(); }
+
+function calcSlidePayment(remaining) {
+  if (remaining <= 50000) return 3000;
+  if (remaining <= 100000) return 5000;
+  if (remaining <= 150000) return 7000;
+  if (remaining <= 200000) return 9000;
+  if (remaining <= 300000) return 12000;
+  if (remaining <= 500000) return 16000;
+  return Math.ceil(remaining / 30000) * 1000;
+}
 
 function renderDebts() {
   const el = document.getElementById('debtList');
@@ -1029,40 +1076,101 @@ function renderDebts() {
     const paid = d.original - d.remaining;
     const paidPct = d.original > 0 ? Math.round((paid / d.original) * 100) : 0;
     const color = d.type === 'ribo' ? 'var(--purple)' : 'var(--coral)';
+    const methodLabel = d.payMethod === 'slide' ? 'スライド' : '定額';
     return `<div class="debt-item">
-      <div class="debt-header">
-        <div style="display:flex;align-items:center;gap:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+        <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
           <span class="debt-type-badge ${d.type === 'ribo' ? 'badge-ribo' : 'badge-cash'}">${d.type === 'ribo' ? 'リボ' : 'キャッシング'}</span>
-          <span class="debt-name">${d.card}</span>
+          <span style="font-weight:700;font-size:13px">${d.card}</span>
+          <span style="font-size:10px;color:var(--text3);background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px 5px">${methodLabel}</span>
         </div>
         <button class="debt-del-btn" onclick="deleteDebt(${d.id})">×</button>
       </div>
-      <div class="debt-amounts">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
         <span class="debt-remaining">${fmt(d.remaining)}</span>
-        <span class="debt-original">元 ${fmt(d.original)}</span>
+        <span style="font-size:10px;color:var(--text3)">元 ${fmt(d.original)}</span>
       </div>
-      <div class="debt-track"><div class="debt-fill" style="width:${paidPct}%;background:${color}"></div></div>
-      <div style="display:flex;gap:12px;margin-bottom:8px">
-        ${d.monthly ? `<span class="debt-monthly">毎月 ${fmt(d.monthly)}</span>` : ''}
-        ${d.rate ? `<span class="debt-rate">年利 ${d.rate}%</span>` : ''}
-      </div>
-      <div class="debt-footer">
-        <span class="debt-paid">返済済 ${fmt(paid)}（${paidPct}%）</span>
-        <div style="display:flex;gap:6px">
-          ${(d.monthly && d.rate) ? `<button class="debt-sim-btn" onclick="openSimModal(${d.id})">シミュレーション</button>` : ''}
-          <button class="debt-pay-btn" onclick="openPayModal(${d.id})">返済を記録</button>
+      <div class="debt-track" style="margin-bottom:5px"><div class="debt-fill" style="width:${paidPct}%;background:${color}"></div></div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;gap:8px">
+          ${d.rate ? `<span class="debt-rate">年利 ${d.rate}%</span>` : ''}
+          ${(d.monthly && d.payMethod !== 'slide') ? `<span class="debt-monthly">月 ${fmt(d.monthly)}</span>` : ''}
+        </div>
+        <div style="display:flex;gap:5px">
+          ${d.rate ? `<button class="debt-sim-btn" onclick="openSimModal(${d.id})">シミュ</button>` : ''}
+          <button class="debt-pay-btn" onclick="openPayModal(${d.id})">返済</button>
         </div>
       </div>
     </div>`;
   }).join('');
 }
 
+function renderDebtTab() {
+  const content = document.getElementById('mainContent');
+  const riboList = debts.filter(d => d.type === 'ribo');
+  const cashList = debts.filter(d => d.type === 'cash');
+  const riboTotal = riboList.reduce((s, d) => s + d.remaining, 0);
+  const cashTotal = cashList.reduce((s, d) => s + d.remaining, 0);
+  const totalDebt = riboTotal + cashTotal;
+  const totalMonthly = debts.reduce((s, d) => {
+    if (!d.rate) return s;
+    return s + (d.payMethod === 'slide' ? calcSlidePayment(d.remaining) : (d.monthly || 0));
+  }, 0);
+  const makeCards = (list) => list.map(d => {
+    const paid = d.original - d.remaining;
+    const pct = d.original > 0 ? Math.round((paid / d.original) * 100) : 0;
+    const col = d.type === 'ribo' ? '#a78bfa' : '#ff7c5c';
+    const curM = d.payMethod === 'slide' ? calcSlidePayment(d.remaining) : (d.monthly || 0);
+    return `<div style="background:var(--bg);border:1.5px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-weight:700;font-size:13px">${d.card}</span>
+        <div style="display:flex;gap:5px">
+          ${d.rate ? `<button class="debt-sim-btn" onclick="openSimModal(${d.id})">シミュ</button>` : ''}
+          <button class="debt-pay-btn" onclick="openPayModal(${d.id})">返済記録</button>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:5px">
+        <span style="font-family:'Nunito',sans-serif;font-weight:900;font-size:20px;color:${col}">${fmt(d.remaining)}</span>
+        <div style="text-align:right;font-size:11px;color:var(--text3)">
+          <div>元 ${fmt(d.original)}</div>
+          ${d.rate ? `<div style="color:var(--coral)">年利 ${d.rate}%</div>` : ''}
+          ${curM ? `<div style="color:var(--blue)">月 ${fmt(curM)}${d.payMethod==='slide'?' (スライド)':''}</div>` : ''}
+        </div>
+      </div>
+      <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:4px">
+        <div style="height:100%;width:${pct}%;background:${col};border-radius:3px"></div>
+      </div>
+      <span style="font-size:11px;color:var(--mint);font-weight:700">返済済 ${pct}%</span>
+    </div>`;
+  }).join('');
+  content.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+      <div style="background:var(--white);border:1.5px solid var(--border);border-radius:14px;padding:12px;text-align:center">
+        <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">残高合計</div>
+        <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:18px;color:var(--coral)">${fmt(totalDebt)}</div>
+      </div>
+      <div style="background:var(--white);border:1.5px solid var(--border);border-radius:14px;padding:12px;text-align:center">
+        <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">今月の返済計</div>
+        <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:18px;color:var(--purple)">${fmt(totalMonthly)}</div>
+      </div>
+      <div style="background:var(--white);border:1.5px solid var(--border);border-radius:14px;padding:12px;text-align:center">
+        <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">件数</div>
+        <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:18px;color:var(--text)">${debts.length}件</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="chart-card"><h3>🔄 リボ払い（${fmt(riboTotal)}）</h3>${riboList.length ? makeCards(riboList) : '<div style="color:var(--text3);font-size:12px;text-align:center;padding:20px">なし</div>'}</div>
+      <div class="chart-card"><h3>💸 キャッシング（${fmt(cashTotal)}）</h3>${cashList.length ? makeCards(cashList) : '<div style="color:var(--text3);font-size:12px;text-align:center;padding:20px">なし</div>'}</div>
+    </div>`;
+}
+
 // PAY MODAL
 function openPayModal(id) {
   payingDebtId = id;
   const d = debts.find(d => d.id === id);
-  document.getElementById('payModalDesc').textContent = `${d.name}（${d.card}）の残高: ${fmt(d.remaining)}`;
-  document.getElementById('payAmt').value = d.monthly || '';
+  const suggested = d.payMethod === 'slide' ? calcSlidePayment(d.remaining) : (d.monthly || 0);
+  document.getElementById('payModalDesc').textContent = `${d.card}（${d.type === 'ribo' ? 'リボ' : 'キャッシング'}）残高: ${fmt(d.remaining)}`;
+  document.getElementById('payAmt').value = suggested || '';
   document.getElementById('payOverlay').classList.add('open');
 }
 function closePayModal() { document.getElementById('payOverlay').classList.remove('open'); payingDebtId = null; }
@@ -1070,9 +1178,10 @@ function recordPayment() {
   const amt = parseFloat(document.getElementById('payAmt').value);
   if (isNaN(amt) || amt <= 0) return;
   const d = debts.find(d => d.id === payingDebtId);
-  if (d) { d.remaining = Math.max(0, d.remaining - amt); }
+  if (d) d.remaining = Math.max(0, d.remaining - amt);
   closePayModal();
   renderDebts();
+  if (tab === 'debt') renderDebtTab();
 }
 
 // SIMULATION
@@ -1081,14 +1190,14 @@ function openSimModal(id) {
   if (!d) return;
   const monthlyRate = d.rate / 100 / 12;
   let remaining = d.remaining;
-  const payment = d.monthly;
   const rows = [];
   let totalInterest = 0;
   let months = 0;
   while (remaining > 0 && months < 600) {
     months++;
+    const payment = d.payMethod === 'slide' ? calcSlidePayment(remaining) : d.monthly;
     const interest = Math.round(remaining * monthlyRate);
-    const principal = Math.min(Math.round(payment - interest), remaining);
+    const principal = Math.min(Math.max(0, Math.round(payment - interest)), remaining);
     if (principal <= 0) { rows.push({ month: months, payment, interest, principal: 0, remaining }); break; }
     remaining = Math.max(0, remaining - principal);
     totalInterest += interest;
@@ -1096,35 +1205,184 @@ function openSimModal(id) {
     if (remaining === 0) break;
   }
   const totalPay = rows.reduce((s, r) => s + r.payment, 0);
-  const finishDate = new Date();
-  finishDate.setMonth(finishDate.getMonth() + months);
-  const finishStr = `${finishDate.getFullYear()}年${finishDate.getMonth()+1}月`;
-
   document.getElementById('simSummary').innerHTML = `
     <div class="sim-pill"><div class="lbl">完済まで</div><div class="val" style="color:var(--purple)">${months}ヶ月</div></div>
     <div class="sim-pill"><div class="lbl">総支払額</div><div class="val" style="color:var(--pink)">${fmt(totalPay)}</div></div>
     <div class="sim-pill"><div class="lbl">総利息</div><div class="val" style="color:var(--coral)">${fmt(totalInterest)}</div></div>
   `;
   document.getElementById('simTableBody').innerHTML = rows.map((r, i) => {
-    const isLast = r.remaining === 0;
-    const d = new Date(); d.setMonth(d.getMonth() + i + 1);
-    const label = `${d.getMonth()+1}月`;
-    return `<tr${isLast ? ' class="highlight"' : ''}>
-      <td>${label}</td>
-      <td>${fmt(r.payment)}</td>
-      <td class="interest">${fmt(r.interest)}</td>
-      <td class="principal">${fmt(r.principal)}</td>
-      <td>${fmt(r.remaining)}</td>
-    </tr>`;
+    const dt = new Date(); dt.setMonth(dt.getMonth() + i + 1);
+    return `<tr${r.remaining === 0 ? ' class="highlight"' : ''}>
+      <td>${dt.getMonth()+1}月</td><td>${fmt(r.payment)}</td>
+      <td class="interest">${fmt(r.interest)}</td><td class="principal">${fmt(r.principal)}</td>
+      <td>${fmt(r.remaining)}</td></tr>`;
   }).join('');
   document.getElementById('simOverlay').classList.add('open');
 }
 function closeSimModal() { document.getElementById('simOverlay').classList.remove('open'); }
 
 // Click outside to close
-['budgetOverlay','debtOverlay','payOverlay','simOverlay'].forEach(id => {
+['budgetOverlay','debtOverlay','payOverlay','simOverlay','assetOverlay'].forEach(id => {
   document.getElementById(id).addEventListener('click', function(e) { if (e.target === this) this.classList.remove('open'); });
 });
+
+// ASSETS
+let assets = {
+  accounts: [
+    { id: 1, name: '西日本シティ銀行', balance: 0, note: '' },
+    { id: 2, name: 'その他口座', balance: 0, note: '' },
+  ],
+  cash: 0,
+  securities: [
+    { id: 1, name: '楽天証券', balance: 0, note: '' },
+  ]
+};
+let editingAsset = null;
+
+function renderAssetTab() {
+  const content = document.getElementById('mainContent');
+  const accountTotal = assets.accounts.reduce((s, a) => s + a.balance, 0);
+  const secTotal = assets.securities.reduce((s, a) => s + a.balance, 0);
+  const debtTotal = debts.reduce((s, d) => s + d.remaining, 0);
+  const netAssets = accountTotal + assets.cash + secTotal - debtTotal;
+
+  const accountRows = assets.accounts.map(a => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-size:13px;font-weight:600">${a.name}</div>
+        ${a.note ? `<div style="font-size:11px;color:var(--text3)">${a.note}</div>` : ''}
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-family:'Nunito',sans-serif;font-weight:900;font-size:17px;color:var(--blue)">${fmt(a.balance)}</span>
+        <button class="debt-pay-btn" onclick="openAssetModal('account',${a.id})">更新</button>
+      </div>
+    </div>`).join('');
+
+  const secRows = assets.securities.map(a => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-size:13px;font-weight:600">${a.name}</div>
+        ${a.note ? `<div style="font-size:11px;color:var(--text3)">${a.note}</div>` : ''}
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-family:'Nunito',sans-serif;font-weight:900;font-size:17px;color:var(--mint)">${fmt(a.balance)}</span>
+        <button class="debt-pay-btn" onclick="openAssetModal('security',${a.id})">更新</button>
+      </div>
+    </div>`).join('');
+
+  const netColor = netAssets >= 0 ? 'var(--mint)' : 'var(--pink)';
+
+  content.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
+      <div style="background:var(--white);border:1.5px solid var(--border);border-radius:14px;padding:12px;text-align:center">
+        <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">口座合計</div>
+        <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:16px;color:var(--blue)">${fmt(accountTotal)}</div>
+      </div>
+      <div style="background:var(--white);border:1.5px solid var(--border);border-radius:14px;padding:12px;text-align:center">
+        <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">手持ち現金</div>
+        <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:16px;color:var(--yellow)">${fmt(assets.cash)}</div>
+      </div>
+      <div style="background:var(--white);border:1.5px solid var(--border);border-radius:14px;padding:12px;text-align:center">
+        <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">証券</div>
+        <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:16px;color:var(--mint)">${fmt(secTotal)}</div>
+      </div>
+      <div style="background:var(--white);border:2px solid ${netAssets>=0?'var(--mint)':'var(--pink)'};border-radius:14px;padding:12px;text-align:center">
+        <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">純資産</div>
+        <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:16px;color:${netColor}">${netAssets>=0?'+':''}${fmt(netAssets)}</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="chart-card" style="grid-column:1/-1">
+        <h3>🏦 口座残高</h3>
+        ${accountRows}
+        <button class="debt-add-btn" style="margin-top:10px" onclick="openAssetModal('newaccount')">＋ 口座を追加</button>
+      </div>
+      <div class="chart-card">
+        <h3>💴 手持ち現金</h3>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0">
+          <span style="font-family:'Nunito',sans-serif;font-weight:900;font-size:26px;color:var(--yellow)">${fmt(assets.cash)}</span>
+          <button class="debt-pay-btn" onclick="openAssetModal('cash')">更新</button>
+        </div>
+      </div>
+      <div class="chart-card">
+        <h3>📈 証券残高</h3>
+        ${secRows}
+        <button class="debt-add-btn" style="margin-top:10px" onclick="openAssetModal('newsecurity')">＋ 証券口座を追加</button>
+      </div>
+    </div>`;
+}
+
+let assetEditTarget = null;
+function openAssetModal(type, id) {
+  assetEditTarget = { type, id };
+  const modal = document.getElementById('assetOverlay');
+  const titleEl = document.getElementById('assetModalTitle');
+  const descEl = document.getElementById('assetModalDesc');
+  const labelEl = document.getElementById('assetModalLabel');
+  const noteWrap = document.getElementById('assetNoteWrap');
+  document.getElementById('assetInput').value = '';
+  document.getElementById('assetNote').value = '';
+  noteWrap.style.display = '';
+
+  if (type === 'cash') {
+    titleEl.textContent = '手持ち現金を更新 💴';
+    descEl.textContent = `現在: ${fmt(assets.cash)}`;
+    labelEl.textContent = '現金残高 ¥';
+    noteWrap.style.display = 'none';
+    document.getElementById('assetInput').value = assets.cash || '';
+  } else if (type === 'account') {
+    const a = assets.accounts.find(a => a.id === id);
+    titleEl.textContent = `${a.name}を更新 🏦`;
+    descEl.textContent = `現在: ${fmt(a.balance)}`;
+    labelEl.textContent = '口座残高 ¥';
+    document.getElementById('assetInput').value = a.balance || '';
+    document.getElementById('assetNote').value = a.note || '';
+  } else if (type === 'security') {
+    const a = assets.securities.find(a => a.id === id);
+    titleEl.textContent = `${a.name}を更新 📈`;
+    descEl.textContent = `現在: ${fmt(a.balance)}`;
+    labelEl.textContent = '評価額 ¥';
+    document.getElementById('assetInput').value = a.balance || '';
+    document.getElementById('assetNote').value = a.note || '';
+  } else if (type === 'newaccount') {
+    titleEl.textContent = '口座を追加 🏦';
+    descEl.textContent = '新しい口座を追加します';
+    labelEl.textContent = '口座残高 ¥';
+    document.getElementById('assetNoteWrap').querySelector('label').textContent = '口座名';
+    document.getElementById('assetNote').placeholder = '例：PayPay銀行、ゆうちょ';
+  } else if (type === 'newsecurity') {
+    titleEl.textContent = '証券口座を追加 📈';
+    descEl.textContent = '新しい証券口座を追加します';
+    labelEl.textContent = '評価額 ¥';
+    document.getElementById('assetNoteWrap').querySelector('label').textContent = '証券会社名';
+    document.getElementById('assetNote').placeholder = '例：SBI証券、マネックス';
+  }
+  modal.classList.add('open');
+}
+function closeAssetModal() { document.getElementById('assetOverlay').classList.remove('open'); }
+function saveAsset() {
+  const val = parseFloat(document.getElementById('assetInput').value) || 0;
+  const note = document.getElementById('assetNote').value.trim();
+  const { type, id } = assetEditTarget;
+  if (type === 'cash') {
+    assets.cash = val;
+  } else if (type === 'account') {
+    const a = assets.accounts.find(a => a.id === id);
+    if (a) { a.balance = val; a.note = note; }
+  } else if (type === 'security') {
+    const a = assets.securities.find(a => a.id === id);
+    if (a) { a.balance = val; a.note = note; }
+  } else if (type === 'newaccount') {
+    if (!note) return;
+    assets.accounts.push({ id: Date.now(), name: note, balance: val, note: '' });
+  } else if (type === 'newsecurity') {
+    if (!note) return;
+    assets.securities.push({ id: Date.now(), name: note, balance: val, note: '' });
+  }
+  closeAssetModal();
+  renderAssetTab();
+}
 </script>
 </body>
 </html>
