@@ -980,6 +980,127 @@ function renderChart() {
   }));
 }
 
+function renderYearlyTab() {
+  destroyCharts();
+  const content = document.getElementById('mainContent');
+  const months = Array.from({length: 12}, (_, i) => i);
+  const labels = months.map(m => `${m+1}月`);
+
+  const monthlyInc  = months.map(m => txs.filter(t => { const d = new Date(t.date); return d.getFullYear()===year && d.getMonth()===m && t.type==='income'; }).reduce((s,t)=>s+t.amount,0));
+  const monthlyExp  = months.map(m => txs.filter(t => { const d = new Date(t.date); return d.getFullYear()===year && d.getMonth()===m && t.type==='expense'; }).reduce((s,t)=>s+t.amount,0));
+  const monthlyBal  = months.map((_, i) => monthlyInc[i] - monthlyExp[i]);
+
+  const totalInc = monthlyInc.reduce((s,v)=>s+v,0);
+  const totalExp = monthlyExp.reduce((s,v)=>s+v,0);
+  const totalBal = totalInc - totalExp;
+  const avgExp   = Math.round(totalExp / 12);
+
+  // カード別年間集計
+  const cardMap = {};
+  txs.filter(t => { const d=new Date(t.date); return d.getFullYear()===year && t.type==='expense'; })
+     .forEach(t => { cardMap[t.card] = (cardMap[t.card]||0) + t.amount; });
+  const cards = Object.entries(cardMap).sort((a,b)=>b[1]-a[1]);
+  const CARD_COLORS2 = ['#ff6b9d','#4da6ff','#ffd93d','#00c896','#a78bfa','#ff7c5c','#00ddff','#ff9944'];
+
+  content.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
+      <div style="background:var(--white);border:1.5px solid var(--border);border-radius:14px;padding:12px;text-align:center">
+        <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">年間収入</div>
+        <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:16px;color:var(--mint)">${fmt(totalInc)}</div>
+      </div>
+      <div style="background:var(--white);border:1.5px solid var(--border);border-radius:14px;padding:12px;text-align:center">
+        <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">年間支出</div>
+        <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:16px;color:var(--pink)">${fmt(totalExp)}</div>
+      </div>
+      <div style="background:var(--white);border:1.5px solid var(--border);border-radius:14px;padding:12px;text-align:center">
+        <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">年間収支</div>
+        <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:16px;color:${totalBal>=0?'var(--mint)':'var(--pink)'}">${totalBal>=0?'+':''}${fmt(totalBal)}</div>
+      </div>
+      <div style="background:var(--white);border:1.5px solid var(--border);border-radius:14px;padding:12px;text-align:center">
+        <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">月平均支出</div>
+        <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:16px;color:var(--coral)">${fmt(avgExp)}</div>
+      </div>
+    </div>
+    <div class="chart-grid">
+      <div class="chart-card wide"><h3>📊 月別収支</h3><canvas id="yearBarChart" style="max-height:220px"></canvas></div>
+      <div class="chart-card wide"><h3>📈 累積収支推移</h3><canvas id="yearLineChart" style="max-height:180px"></canvas></div>
+      <div class="chart-card">
+        <h3>💳 カード別年間支出</h3>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${cards.length ? cards.map(([card, amt], i) => {
+            const pct = totalExp ? Math.round((amt/totalExp)*100) : 0;
+            return `<div style="display:flex;align-items:center;gap:10px">
+              <span style="font-size:12px;font-weight:600;color:var(--text2);width:90px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${card}</span>
+              <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${CARD_COLORS2[i%CARD_COLORS2.length]};border-radius:3px"></div></div>
+              <span style="font-family:'Nunito',sans-serif;font-weight:700;font-size:12px;color:var(--text2);width:65px;text-align:right;flex-shrink:0">${fmt(amt)}</span>
+            </div>`;
+          }).join('') : '<div style="color:var(--text3);font-size:12px;text-align:center;padding:20px">データなし</div>'}
+        </div>
+      </div>
+      <div class="chart-card">
+        <h3>📋 月別明細</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr>
+            <th style="text-align:left;padding:5px 4px;border-bottom:1.5px solid var(--border);color:var(--text3);font-weight:700;font-size:11px">月</th>
+            <th style="text-align:right;padding:5px 4px;border-bottom:1.5px solid var(--border);color:var(--text3);font-weight:700;font-size:11px">収入</th>
+            <th style="text-align:right;padding:5px 4px;border-bottom:1.5px solid var(--border);color:var(--text3);font-weight:700;font-size:11px">支出</th>
+            <th style="text-align:right;padding:5px 4px;border-bottom:1.5px solid var(--border);color:var(--text3);font-weight:700;font-size:11px">収支</th>
+          </tr></thead>
+          <tbody>
+            ${months.map(m => {
+              const bal = monthlyBal[m];
+              const hasData = monthlyInc[m]||monthlyExp[m];
+              return `<tr style="${m===new Date().getMonth()&&year===new Date().getFullYear()?'background:var(--yellow-light)':''}">
+                <td style="padding:5px 4px;border-bottom:1px solid var(--border);font-weight:700;color:var(--text2)">${m+1}月</td>
+                <td style="padding:5px 4px;border-bottom:1px solid var(--border);text-align:right;font-family:'Nunito',sans-serif;font-weight:700;color:var(--mint)">${monthlyInc[m]?fmt(monthlyInc[m]):'-'}</td>
+                <td style="padding:5px 4px;border-bottom:1px solid var(--border);text-align:right;font-family:'Nunito',sans-serif;font-weight:700;color:var(--pink)">${monthlyExp[m]?fmt(monthlyExp[m]):'-'}</td>
+                <td style="padding:5px 4px;border-bottom:1px solid var(--border);text-align:right;font-family:'Nunito',sans-serif;font-weight:800;color:${bal>=0?'var(--mint)':'var(--pink)'}">${hasData?(bal>=0?'+':'')+fmt(bal):'-'}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+
+  const scOpts = {
+    x: { ticks: { color: '#aaaaaa', font:{size:10} }, grid:{color:'#f0e8e0'} },
+    y: { ticks: { color: '#aaaaaa', font:{size:10}, callback: v=>'¥'+v.toLocaleString() }, grid:{color:'#f0e8e0'} }
+  };
+  const legOpts = { labels: { color:'#6b6b6b', font:{size:11}, boxWidth:10, boxHeight:10 } };
+
+  chartObjs.push(new Chart(document.getElementById('yearBarChart'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label:'収入', data:monthlyInc, backgroundColor:'rgba(0,200,150,0.55)', borderRadius:4 },
+        { label:'支出', data:monthlyExp, backgroundColor:'rgba(255,107,157,0.65)', borderRadius:4 },
+      ]
+    },
+    options: { scales: scOpts, plugins:{ legend: legOpts } }
+  }));
+
+  let cumBal = 0;
+  const cumData = months.map(m => { cumBal += monthlyBal[m]; return cumBal; });
+  chartObjs.push(new Chart(document.getElementById('yearLineChart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label:'累積収支',
+        data: cumData,
+        borderColor: cumData[cumData.length-1] >= 0 ? '#00c896' : '#ff6b9d',
+        backgroundColor: cumData[cumData.length-1] >= 0 ? 'rgba(0,200,150,0.07)' : 'rgba(255,107,157,0.07)',
+        fill: true, tension: 0.4, pointRadius: 3, pointHoverRadius: 6
+      }]
+    },
+    options: {
+      scales: { ...scOpts, y: { ...scOpts.y, suggestedMin: Math.min(0, ...cumData) } },
+      plugins: { legend: legOpts }
+    }
+  }));
+}
+
 function switchTab(t, btn) {
   tab = t;
   document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
@@ -1210,11 +1331,36 @@ function renderDebtTab() {
     if (!d.rate) return s;
     return s + (d.payMethod === 'slide' ? calcSlidePayment(d.remaining) : (d.monthly || 0));
   }, 0);
+  const calcCompletion = (d) => {
+    if (!d.rate) return null;
+    const monthlyRate = d.rate / 100 / 12;
+    let remaining = d.remaining;
+    let months = 0;
+    while (remaining > 0 && months < 600) {
+      months++;
+      const payment = d.payMethod === 'slide' ? calcSlidePayment(remaining) : (d.monthly || 0);
+      const interest = Math.round(remaining * monthlyRate);
+      const principal = Math.min(Math.max(0, Math.round(payment - interest)), remaining);
+      if (principal <= 0) break;
+      remaining = Math.max(0, remaining - principal);
+      if (remaining === 0) break;
+    }
+    if (months >= 600) return null;
+    const finishDate = new Date();
+    finishDate.setMonth(finishDate.getMonth() + months);
+    const today = new Date();
+    const diffDays = Math.ceil((finishDate - today) / (1000 * 60 * 60 * 24));
+    return { months, finishDate, diffDays };
+  };
+
   const makeCards = (list) => list.map(d => {
     const paid = d.original - d.remaining;
     const pct = d.original > 0 ? Math.round((paid / d.original) * 100) : 0;
     const col = d.type === 'ribo' ? '#a78bfa' : '#ff7c5c';
     const curM = d.payMethod === 'slide' ? calcSlidePayment(d.remaining) : (d.monthly || 0);
+    const comp = calcCompletion(d);
+    const urgencyColor = comp ? (comp.months <= 3 ? 'var(--mint)' : comp.months <= 12 ? 'var(--blue)' : 'var(--coral)') : 'var(--text3)';
+    const finishStr = comp ? `${comp.finishDate.getFullYear()}年${comp.finishDate.getMonth()+1}月` : null;
     return `<div style="background:var(--bg);border:1.5px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
         <span style="font-weight:700;font-size:13px">${d.card}</span>
@@ -1231,12 +1377,23 @@ function renderDebtTab() {
           ${curM ? `<div style="color:var(--blue)">月 ${fmt(curM)}${d.payMethod==='slide'?' (スライド)':''}</div>` : ''}
         </div>
       </div>
-      <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:4px">
+      <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:6px">
         <div style="height:100%;width:${pct}%;background:${col};border-radius:3px"></div>
       </div>
-      <span style="font-size:11px;color:var(--mint);font-weight:700">返済済 ${pct}%</span>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:11px;color:var(--mint);font-weight:700">返済済 ${pct}%</span>
+        ${comp ? `<div style="background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:5px 10px;text-align:center">
+          <div style="font-size:10px;color:var(--text3);font-weight:700;margin-bottom:1px">完済まで</div>
+          <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:15px;color:${urgencyColor};line-height:1.1">${comp.months}ヶ月</div>
+          <div style="font-size:10px;color:var(--text3)">${finishStr}（あと${comp.diffDays}日）</div>
+        </div>` : ''}
+      </div>
     </div>`;
   }).join('');
+  const allComps = debts.map(d => calcCompletion(d)).filter(Boolean);
+  const maxMonths = allComps.length ? Math.max(...allComps.map(c => c.months)) : null;
+  const latestFinish = maxMonths ? (() => { const dt = new Date(); dt.setMonth(dt.getMonth() + maxMonths); return `${dt.getFullYear()}年${dt.getMonth()+1}月`; })() : null;
+
   content.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(3,1fr) auto;gap:10px;margin-bottom:14px;align-items:center">
       <div style="background:var(--white);border:1.5px solid var(--border);border-radius:14px;padding:12px;text-align:center">
@@ -1247,9 +1404,10 @@ function renderDebtTab() {
         <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">今月の返済計</div>
         <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:18px;color:var(--purple)">${fmt(totalMonthly)}</div>
       </div>
-      <div style="background:var(--white);border:1.5px solid var(--border);border-radius:14px;padding:12px;text-align:center">
-        <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">件数</div>
-        <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:18px;color:var(--text)">${debts.length}件</div>
+      <div style="background:var(--white);border:1.5px solid ${latestFinish?'var(--mint)':'var(--border)'};border-radius:14px;padding:12px;text-align:center">
+        <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">全件完済予定</div>
+        <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:${latestFinish?'14':'18'}px;color:var(--mint)">${latestFinish || (debts.length ? '—' : 'なし')}</div>
+        ${maxMonths ? `<div style="font-size:10px;color:var(--text3)">あと${maxMonths}ヶ月</div>` : ''}
       </div>
       <button class="add-btn" style="white-space:nowrap;padding:10px 16px" onclick="openDebtModal()">＋ 追加</button>
     </div>
