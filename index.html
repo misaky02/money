@@ -427,6 +427,8 @@
     border-radius: 6px; transition: all 0.15s;
   }
   .tx-del:hover { background: var(--pink-light); color: var(--pink); }
+  .tx-edit { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 14px; padding: 3px 5px; border-radius: 6px; transition: all 0.15s; }
+  .tx-edit:hover { background: var(--blue-light); color: var(--blue); }
 
   .empty {
     text-align: center;
@@ -633,6 +635,56 @@
     </div>
     <div id="mainContent">
       <div class="tx-list" id="txList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Tx Edit Modal -->
+<div class="overlay" id="editOverlay">
+  <div class="modal">
+    <h2>記録を編集 ✎</h2>
+    <div class="type-toggle" style="margin-bottom:10px">
+      <button class="type-btn" id="editBtnInc" onclick="setEditType('income')">収入</button>
+      <button class="type-btn" id="editBtnExp" onclick="setEditType('expense')">支出</button>
+    </div>
+    <div class="form-row">
+      <div class="fg">
+        <label>日付</label>
+        <input type="date" id="editDate">
+      </div>
+      <div class="fg">
+        <label>金額 ¥</label>
+        <input type="number" id="editAmt" min="0">
+      </div>
+    </div>
+    <div class="fg" style="margin-bottom:8px" id="editFieldCard">
+      <label>カード</label>
+      <select id="editCard">
+        <option>アプラス</option>
+        <option>JCB</option>
+        <option>メルカリ</option>
+        <option>Yahoo</option>
+        <option>Amazon</option>
+        <option>au</option>
+        <option>Paidy</option>
+        <option>セブン</option>
+        <option>西日本シティ銀行</option>
+        <option>奨学金</option>
+        <option>自転車</option>
+        <option>その他</option>
+      </select>
+    </div>
+    <div class="fg" style="margin-bottom:8px;display:none" id="editFieldSource">
+      <label>収入元</label>
+      <input type="text" id="editSource" placeholder="例：給与、フリーランス…">
+    </div>
+    <div class="fg">
+      <label>メモ（任意）</label>
+      <input type="text" id="editNote" placeholder="">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeEditModal()">キャンセル</button>
+      <button class="btn-save" onclick="saveEdit()">保存</button>
     </div>
   </div>
 </div>
@@ -910,6 +962,7 @@ function renderList() {
       </div>
       <span class="tx-date">${ds}</span>
       <span class="tx-amt ${t.type}">${sign}${fmt(t.amount)}</span>
+      <button class="tx-edit" onclick="openEditModal(${t.id})" title="編集">✎</button>
       <button class="tx-del" onclick="deleteTx(${t.id})">×</button>
     </div>`;
   }).join('');
@@ -1492,8 +1545,56 @@ function openSimModal(id) {
 }
 function closeSimModal() { document.getElementById('simOverlay').classList.remove('open'); }
 
-// Click outside to close
-['budgetOverlay','debtOverlay','payOverlay','simOverlay','assetOverlay'].forEach(id => {
+// TX EDIT MODAL
+let editingTxId = null;
+function openEditModal(id) {
+  const t = txs.find(t => t.id === id);
+  if (!t) return;
+  editingTxId = id;
+  document.getElementById('editDate').value = t.date;
+  document.getElementById('editAmt').value = t.amount;
+  document.getElementById('editNote').value = t.note || '';
+  setEditType(t.type);
+  if (t.type === 'income') {
+    document.getElementById('editSource').value = t.card;
+  } else {
+    document.getElementById('editCard').value = t.card;
+  }
+  document.getElementById('editOverlay').classList.add('open');
+}
+function setEditType(t) {
+  document.getElementById('editBtnInc').className = 'type-btn' + (t === 'income' ? ' inc-on' : '');
+  document.getElementById('editBtnExp').className = 'type-btn' + (t === 'expense' ? ' exp-on' : '');
+  document.getElementById('editFieldCard').style.display = t === 'expense' ? '' : 'none';
+  document.getElementById('editFieldSource').style.display = t === 'income' ? '' : 'none';
+  document.getElementById('editBtnInc').dataset.type = 'income';
+  document.getElementById('editBtnExp').dataset.type = 'expense';
+  document.getElementById('editOverlay').dataset.editType = t;
+}
+function closeEditModal() { document.getElementById('editOverlay').classList.remove('open'); editingTxId = null; }
+function saveEdit() {
+  const t = txs.find(t => t.id === editingTxId);
+  if (!t) return;
+  const editType = document.getElementById('editOverlay').dataset.editType;
+  const date = document.getElementById('editDate').value;
+  const amount = parseFloat(document.getElementById('editAmt').value);
+  const card = editType === 'income'
+    ? (document.getElementById('editSource').value.trim() || '収入')
+    : document.getElementById('editCard').value;
+  const note = document.getElementById('editNote').value.trim();
+  if (!date || isNaN(amount) || amount <= 0) return;
+  t.date = date;
+  t.amount = amount;
+  t.type = editType;
+  t.card = card;
+  t.note = note;
+  closeEditModal();
+  saveData();
+  render();
+}
+
+// TX EDIT MODAL - click outside
+document.getElementById('editOverlay').addEventListener('click', function(e) { if (e.target === this) closeEditModal(); });
   document.getElementById(id).addEventListener('click', function(e) { if (e.target === this) this.classList.remove('open'); });
 });
 
