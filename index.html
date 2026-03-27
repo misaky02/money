@@ -575,13 +575,6 @@
       <button class="budget-set-btn" style="margin-top:10px" onclick="runAnalysis()">🔍 分析する</button>
     </div>
 
-    <!-- DEBT -->
-    <div class="card">
-      <div class="card-title"><span class="card-title-dot" style="background:var(--coral)"></span>リボ・キャッシング残高</div>
-      <div class="debt-list" id="debtList"></div>
-      <button class="debt-add-btn" style="margin-top:10px" onclick="openDebtModal()">＋ 残高を追加する</button>
-    </div>
-
     <!-- ADD FORM -->
     <div class="card">
       <div class="card-title"><span class="card-title-dot" style="background:var(--blue)"></span>記録を追加</div>
@@ -631,6 +624,7 @@
     <div class="tab-row">
       <button class="tab active" onclick="switchTab('list', this)">明細</button>
       <button class="tab" onclick="switchTab('chart', this)">グラフ</button>
+      <button class="tab" onclick="switchTab('yearly', this)">年間</button>
       <button class="tab" onclick="switchTab('debt', this)">リボ・キャッシング</button>
       <button class="tab" onclick="switchTab('assets', this)">資産</button>
     </div>
@@ -786,7 +780,7 @@ function fmt(n) { return '¥' + Math.abs(Math.round(n)).toLocaleString('ja-JP');
 const LS_KEY = 'kakeibo_v1';
 function saveData() {
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify({ txs, budget, debts, assets }));
+    localStorage.setItem(LS_KEY, JSON.stringify({ txs, budget, debts, assets, cardAccountMap }));
   } catch(e) {}
 }
 function loadData() {
@@ -798,6 +792,7 @@ function loadData() {
     if (d.budget != null) budget = d.budget;
     if (d.debts) debts = d.debts;
     if (d.assets) assets = d.assets;
+    if (d.cardAccountMap) cardAccountMap = { ...cardAccountMap, ...d.cardAccountMap };
   } catch(e) {}
 }
 
@@ -843,6 +838,14 @@ function addTx() {
     return;
   }
   txs.unshift({ id: Date.now(), date, type: txType, amount, card, note });
+  // カード引落：紐づき口座から自動減算
+  if (txType === 'expense') {
+    const accountId = cardAccountMap[card];
+    if (accountId) {
+      const acc = assets.accounts.find(a => a.id === accountId);
+      if (acc) acc.balance = Math.max(0, acc.balance - amount);
+    }
+  }
   document.getElementById('txAmt').value = '';
   document.getElementById('txNote').value = '';
   if (txType === 'income') document.getElementById('txSource').value = '';
@@ -873,33 +876,7 @@ function renderSummary() {
 
 function renderBudget() { /* 月間予算セクション削除済 */ }
 
-function renderDebts() {
-  const el = document.getElementById('debtList');
-  if (!debts.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text3);text-align:center;padding:8px 0">残高なし</div>'; return; }
-  el.innerHTML = debts.map(d => {
-    const paid = d.original - d.remaining;
-    const paidPct = d.original > 0 ? Math.round((paid / d.original) * 100) : 0;
-    const color = d.type === 'ribo' ? 'var(--purple)' : 'var(--coral)';
-    return `<div class="debt-item">
-      <div class="debt-header">
-        <span class="debt-name">${d.name}</span>
-        <div style="display:flex;align-items:center;gap:6px">
-          <span class="debt-type-badge ${d.type === 'ribo' ? 'badge-ribo' : 'badge-cash'}">${d.type === 'ribo' ? 'リボ' : 'キャッシング'}</span>
-          <button class="debt-del-btn" onclick="deleteDebt(${d.id})">×</button>
-        </div>
-      </div>
-      <div class="debt-amounts">
-        <span class="debt-remaining">${fmt(d.remaining)}</span>
-        <span class="debt-original">元 ${fmt(d.original)}</span>
-      </div>
-      <div class="debt-track"><div class="debt-fill" style="width:${paidPct}%;background:${color}"></div></div>
-      <div class="debt-footer">
-        <span class="debt-paid">返済済 ${fmt(paid)}（${paidPct}%）</span>
-        <button class="debt-pay-btn" onclick="openPayModal(${d.id})">返済を記録</button>
-      </div>
-    </div>`;
-  }).join('');
-}
+function renderDebts() { /* サイドバー削除済 - renderDebtTab を使用 */ }
 
 function renderList() {
   const list = monthTxs().sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -1012,6 +989,8 @@ function switchTab(t, btn) {
     render();
   } else if (t === 'chart') {
     render();
+  } else if (t === 'yearly') {
+    renderYearlyTab();
   } else if (t === 'debt') {
     renderDebtTab();
   } else if (t === 'assets') {
@@ -1126,6 +1105,100 @@ function renderDebts() {
   }).join('');
 }
 
+function renderYearlyTab() {
+  const content = document.getElementById('mainContent');
+  const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+
+  // Gather all years present in txs, plus current year
+  const years = [...new Set([year, ...txs.map(t => new Date(t.date).getFullYear())])].sort((a,b) => b-a);
+  const selectedYear = content._yearlyYear || year;
+  content._yearlyYear = selectedYear;
+
+  // Build monthly data for selected year
+  const monthlyData = months.map((_, mi) => {
+    const list = txs.filter(t => { const d = new Date(t.date); return d.getFullYear() === selectedYear && d.getMonth() === mi; });
+    const inc = list.filter(t => t.type === 'income').reduce((s,t) => s+t.amount, 0);
+    const exp = list.filter(t => t.type === 'expense').reduce((s,t) => s+t.amount, 0);
+    return { inc, exp, bal: inc - exp };
+  });
+
+  const totalInc = monthlyData.reduce((s,d) => s+d.inc, 0);
+  const totalExp = monthlyData.reduce((s,d) => s+d.exp, 0);
+  const totalBal = totalInc - totalExp;
+  const maxVal = Math.max(...monthlyData.map(d => Math.max(d.inc, d.exp)), 1);
+
+  // Card breakdown per year
+  const cardMap = {};
+  txs.filter(t => new Date(t.date).getFullYear() === selectedYear && t.type === 'expense')
+    .forEach(t => { cardMap[t.card] = (cardMap[t.card] || 0) + t.amount; });
+  const cardEntries = Object.entries(cardMap).sort((a,b) => b[1]-a[1]);
+  const cardColors = ['#ff6b9d','#4da6ff','#ffd93d','#00c896','#a78bfa','#ff7c5c','#00c8c8','#ffaa00','#88cc44'];
+
+  const yearBtns = years.map(y =>
+    `<button onclick="document.getElementById('mainContent')._yearlyYear=${y};renderYearlyTab()" style="padding:5px 14px;border-radius:8px;border:1.5px solid ${y===selectedYear?'var(--pink)':'var(--border)'};background:${y===selectedYear?'var(--pink-light)':'none'};color:${y===selectedYear?'var(--pink)':'var(--text2)'};font-family:'Nunito',sans-serif;font-weight:700;font-size:13px;cursor:pointer">${y}年</button>`
+  ).join('');
+
+  const barRows = monthlyData.map((d, i) => {
+    const expPct = Math.round((d.exp / maxVal) * 100);
+    const incPct = Math.round((d.inc / maxVal) * 100);
+    const balColor = d.bal >= 0 ? 'var(--mint)' : 'var(--pink)';
+    return `<div style="display:grid;grid-template-columns:28px 1fr 1fr 72px;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:11px;color:var(--text3);font-weight:700;text-align:right">${months[i]}</span>
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <div style="height:7px;background:var(--bg);border-radius:3px;overflow:hidden"><div style="height:100%;width:${incPct}%;background:var(--mint);border-radius:3px"></div></div>
+        <div style="height:7px;background:var(--bg);border-radius:3px;overflow:hidden"><div style="height:100%;width:${expPct}%;background:var(--pink);border-radius:3px"></div></div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);display:flex;flex-direction:column;gap:1px">
+        <span style="color:var(--mint)">+${fmt(d.inc)}</span>
+        <span style="color:var(--pink)">-${fmt(d.exp)}</span>
+      </div>
+      <div style="font-family:'Nunito',sans-serif;font-weight:800;font-size:13px;color:${balColor};text-align:right">${d.bal>=0?'+':''}${fmt(d.bal)}</div>
+    </div>`;
+  }).join('');
+
+  const cardBars = cardEntries.length ? cardEntries.map(([name, amt], i) => {
+    const pct = Math.round((amt / totalExp) * 100);
+    return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      <span style="font-size:12px;color:var(--text2);font-weight:600;width:80px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span>
+      <div style="flex:1;height:6px;background:var(--bg);border-radius:3px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:${cardColors[i%cardColors.length]};border-radius:3px"></div>
+      </div>
+      <span style="font-family:'Nunito',sans-serif;font-weight:700;font-size:12px;color:var(--text2);width:70px;text-align:right;flex-shrink:0">${fmt(amt)}</span>
+    </div>`;
+  }).join('') : '<div style="color:var(--text3);font-size:12px;text-align:center;padding:20px">支出なし</div>';
+
+  content.innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">${yearBtns}</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+      <div style="background:var(--white);border:1.5px solid var(--border);border-radius:14px;padding:12px;text-align:center">
+        <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">年間収入</div>
+        <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:18px;color:var(--mint)">${fmt(totalInc)}</div>
+      </div>
+      <div style="background:var(--white);border:1.5px solid var(--border);border-radius:14px;padding:12px;text-align:center">
+        <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">年間支出</div>
+        <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:18px;color:var(--pink)">${fmt(totalExp)}</div>
+      </div>
+      <div style="background:var(--white);border:2px solid ${totalBal>=0?'var(--mint)':'var(--pink)'};border-radius:14px;padding:12px;text-align:center">
+        <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">年間収支</div>
+        <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:18px;color:${totalBal>=0?'var(--mint)':'var(--pink)'}">${totalBal>=0?'+':''}${fmt(totalBal)}</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="chart-card">
+        <h3>📅 月別収支（${selectedYear}年）</h3>
+        <div style="display:flex;gap:12px;margin-bottom:10px">
+          <span style="font-size:11px;color:var(--mint);font-weight:700;display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:4px;background:var(--mint);border-radius:2px"></span>収入</span>
+          <span style="font-size:11px;color:var(--pink);font-weight:700;display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:4px;background:var(--pink);border-radius:2px"></span>支出</span>
+        </div>
+        ${barRows}
+      </div>
+      <div class="chart-card">
+        <h3>💳 カード別年間支出（${selectedYear}年）</h3>
+        ${cardBars}
+      </div>
+    </div>`;
+}
+
 function renderDebtTab() {
   const content = document.getElementById('mainContent');
   const riboList = debts.filter(d => d.type === 'ribo');
@@ -1165,7 +1238,7 @@ function renderDebtTab() {
     </div>`;
   }).join('');
   content.innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr) auto;gap:10px;margin-bottom:14px;align-items:center">
       <div style="background:var(--white);border:1.5px solid var(--border);border-radius:14px;padding:12px;text-align:center">
         <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">残高合計</div>
         <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:18px;color:var(--coral)">${fmt(totalDebt)}</div>
@@ -1178,6 +1251,7 @@ function renderDebtTab() {
         <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">件数</div>
         <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:18px;color:var(--text)">${debts.length}件</div>
       </div>
+      <button class="add-btn" style="white-space:nowrap;padding:10px 16px" onclick="openDebtModal()">＋ 追加</button>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
       <div class="chart-card"><h3>🔄 リボ払い（${fmt(riboTotal)}）</h3>${riboList.length ? makeCards(riboList) : '<div style="color:var(--text3);font-size:12px;text-align:center;padding:20px">なし</div>'}</div>
@@ -1259,6 +1333,11 @@ let assets = {
     { id: 1, name: '楽天証券', balance: 0, note: '' },
   ]
 };
+// カード → 口座ID のマッピング（null = 自動引落なし）
+let cardAccountMap = {
+  'アプラス': null, 'JCB': null, 'メルカリ': null, 'Yahoo': null,
+  'Amazon': null, 'au': null, 'Paidy': null, 'セブン': null, '西日本シティ銀行': null
+};
 let editingAsset = null;
 
 function renderAssetTab() {
@@ -1332,10 +1411,28 @@ function renderAssetTab() {
         ${secRows}
         <button class="debt-add-btn" style="margin-top:10px" onclick="openAssetModal('newsecurity')">＋ 証券口座を追加</button>
       </div>
+      <div class="chart-card" style="grid-column:1/-1">
+        <h3>🔗 カード引落設定</h3>
+        <p style="font-size:12px;color:var(--text3);margin-bottom:12px">支出追加時に、指定した口座から自動で引き落とします。</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">
+          ${Object.keys(cardAccountMap).map(card => `
+            <div style="display:flex;align-items:center;gap:8px;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:8px 12px">
+              <span style="font-size:12px;font-weight:700;flex:1">${card}</span>
+              <select onchange="setCardAccount('${card}', this.value)" style="font-size:11px;padding:4px 6px;border-radius:7px;flex:1">
+                <option value="">引落なし</option>
+                ${assets.accounts.map(a => `<option value="${a.id}" ${cardAccountMap[card]==a.id?'selected':''}>${a.name}</option>`).join('')}
+              </select>
+            </div>`).join('')}
+        </div>
+      </div>
     </div>`;
 }
 
 let assetEditTarget = null;
+function setCardAccount(card, accountId) {
+  cardAccountMap[card] = accountId ? parseInt(accountId) : null;
+  saveData();
+}
 function openAssetModal(type, id) {
   assetEditTarget = { type, id };
   const modal = document.getElementById('assetOverlay');
