@@ -783,7 +783,26 @@ const CARD_COLORS = ['#ff6b9d','#4da6ff','#ffd93d','#00c896','#a78bfa','#ff7c5c'
 
 function fmt(n) { return '¥' + Math.abs(Math.round(n)).toLocaleString('ja-JP'); }
 
+const LS_KEY = 'kakeibo_v1';
+function saveData() {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({ txs, budget, debts, assets }));
+  } catch(e) {}
+}
+function loadData() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    if (d.txs) txs = d.txs;
+    if (d.budget != null) budget = d.budget;
+    if (d.debts) debts = d.debts;
+    if (d.assets) assets = d.assets;
+  } catch(e) {}
+}
+
 window.onload = () => {
+  loadData();
   document.getElementById('txDate').value = new Date().toISOString().split('T')[0];
   setType('expense');
   updateLabel();
@@ -827,9 +846,10 @@ function addTx() {
   document.getElementById('txAmt').value = '';
   document.getElementById('txNote').value = '';
   if (txType === 'income') document.getElementById('txSource').value = '';
+  saveData();
   render();
 }
-function deleteTx(id) { txs = txs.filter(t => t.id !== id); render(); }
+function deleteTx(id) { txs = txs.filter(t => t.id !== id); saveData(); render(); }
 
 function render() {
   renderSummary();
@@ -1002,7 +1022,7 @@ function switchTab(t, btn) {
 // BUDGET MODAL
 function openBudgetModal() { if (budget) document.getElementById('budgetInput').value = budget; document.getElementById('budgetOverlay').classList.add('open'); }
 function closeBudgetModal() { document.getElementById('budgetOverlay').classList.remove('open'); }
-function saveBudget() { budget = parseFloat(document.getElementById('budgetInput').value) || 0; closeBudgetModal(); render(); }
+function saveBudget() { budget = parseFloat(document.getElementById('budgetInput').value) || 0; closeBudgetModal(); saveData(); render(); }
 
 // ANALYSIS
 async function runAnalysis() {
@@ -1054,10 +1074,11 @@ function addDebt() {
   if (isNaN(balance) || balance <= 0) return;
   debts.push({ id: Date.now(), card, type, payMethod, original: balance, remaining: balance, monthly, rate });
   closeDebtModal();
+  saveData();
   renderDebts();
   if (tab === 'debt') renderDebtTab();
 }
-function deleteDebt(id) { debts = debts.filter(d => d.id !== id); renderDebts(); if (tab === 'debt') renderDebtTab(); }
+function deleteDebt(id) { debts = debts.filter(d => d.id !== id); saveData(); renderDebts(); if (tab === 'debt') renderDebtTab(); }
 
 function calcSlidePayment(remaining) {
   if (remaining <= 50000) return 3000;
@@ -1180,6 +1201,7 @@ function recordPayment() {
   const d = debts.find(d => d.id === payingDebtId);
   if (d) d.remaining = Math.max(0, d.remaining - amt);
   closePayModal();
+  saveData();
   renderDebts();
   if (tab === 'debt') renderDebtTab();
 }
@@ -1381,6 +1403,7 @@ function saveAsset() {
     assets.securities.push({ id: Date.now(), name: note, balance: val, note: '' });
   }
   closeAssetModal();
+  saveData();
   renderAssetTab();
 }
 </script>
