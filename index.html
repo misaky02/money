@@ -807,6 +807,9 @@ window.onload = () => {
   document.getElementById('txDate').value = new Date().toISOString().split('T')[0];
   setType('expense');
   updateLabel();
+  // 明細タブを確実に初期化
+  tab = 'list';
+  document.getElementById('mainContent').innerHTML = '<div class="tx-list" id="txList"></div>';
   render();
 };
 
