@@ -144,23 +144,29 @@
   .sum-pill {
     background: var(--bg);
     border-radius: 14px;
-    padding: 12px 10px;
+    padding: 10px 6px;
     text-align: center;
     border: 1.5px solid var(--border);
+    min-width: 0;
+    overflow: hidden;
   }
   .sum-pill .lbl {
-    font-size: 10px;
+    font-size: 9px;
     color: var(--text3);
     font-weight: 600;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
     text-transform: uppercase;
-    margin-bottom: 4px;
+    margin-bottom: 3px;
+    white-space: nowrap;
   }
   .sum-pill .val {
     font-family: 'Nunito', sans-serif;
     font-weight: 900;
-    font-size: 17px;
-    line-height: 1.1;
+    font-size: 13px;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .sum-pill.inc .val { color: var(--mint); }
   .sum-pill.exp .val { color: var(--pink); }
@@ -911,16 +917,13 @@ function setType(t) {
   document.getElementById('fieldCard').style.display = t === 'expense' ? '' : 'none';
   document.getElementById('fieldSource').style.display = t === 'income' ? '' : 'none';
 }
-// 月の集計期間: 前月16日〜当月15日を「当月分」とする
+// 月の集計期間: M月16日〜(M+1)月15日を「M月分」とする
+// 例: 3月分 = 3/16〜4/15
 function periodStart(y, m) {
-  // m月の開始 = 前月16日
-  const d = new Date(y, m, 16); // JS: month is 0-indexed, so m=2(March) → prev month Feb 16 → new Date(y,2,16) = March 16... wait
-  // "3月分" = 前年/前月の16日〜3月15日
-  // つまり: start = new Date(y, m-1, 16), end = new Date(y, m, 15)
-  return new Date(y, m - 1, 16);
+  return new Date(y, m, 16); // M月16日
 }
 function periodEnd(y, m) {
-  return new Date(y, m, 15);
+  return new Date(y, m + 1, 15); // (M+1)月15日
 }
 function monthTxs() {
   const start = periodStart(year, month);
