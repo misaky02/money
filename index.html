@@ -137,36 +137,34 @@
 
   /* SUMMARY STRIP */
   .summary-strip {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
   }
   .sum-pill {
     background: var(--bg);
-    border-radius: 14px;
-    padding: 10px 6px;
-    text-align: center;
+    border-radius: 12px;
+    padding: 10px 14px;
     border: 1.5px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     min-width: 0;
-    overflow: hidden;
   }
   .sum-pill .lbl {
-    font-size: 9px;
+    font-size: 11px;
     color: var(--text3);
-    font-weight: 600;
-    letter-spacing: 0.3px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
     text-transform: uppercase;
-    margin-bottom: 3px;
-    white-space: nowrap;
+    flex-shrink: 0;
   }
   .sum-pill .val {
     font-family: 'Nunito', sans-serif;
     font-weight: 900;
-    font-size: 13px;
+    font-size: 18px;
     line-height: 1.2;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    text-align: right;
   }
   .sum-pill.inc .val { color: var(--mint); }
   .sum-pill.exp .val { color: var(--pink); }
@@ -572,7 +570,7 @@
         </div>
         <div class="sum-pill">
           <div class="lbl">収支</div>
-          <div class="val" id="sumBalance" style="font-size:15px">¥0</div>
+          <div class="val" id="sumBalance">¥0</div>
         </div>
       </div>
     </div>
