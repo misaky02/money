@@ -865,7 +865,10 @@ function render() {
   renderBudget();
   renderDebts();
   if (tab === 'list') renderList();
-  else renderChart();
+  else if (tab === 'chart') renderChart();
+  else if (tab === 'yearly') renderYearlyTab();
+  else if (tab === 'debt') renderDebtTab();
+  else if (tab === 'assets') renderAssetTab();
 }
 
 function renderSummary() {
@@ -1111,16 +1114,21 @@ function switchTab(t, btn) {
   tab = t;
   document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
+  destroyCharts();
   if (t === 'list') {
     document.getElementById('mainContent').innerHTML = '<div class="tx-list" id="txList"></div>';
-    render();
+    renderList();
   } else if (t === 'chart') {
-    render();
+    document.getElementById('mainContent').innerHTML = '';
+    renderChart();
   } else if (t === 'yearly') {
+    document.getElementById('mainContent').innerHTML = '';
     renderYearlyTab();
   } else if (t === 'debt') {
+    document.getElementById('mainContent').innerHTML = '';
     renderDebtTab();
   } else if (t === 'assets') {
+    document.getElementById('mainContent').innerHTML = '';
     renderAssetTab();
   }
 }
