@@ -534,7 +534,7 @@
 <header>
   <div class="logo">
     <div class="logo-icon">💳</div>
-    <h1><span>家計簿</span></h1>
+    <h1 style="color:#2d2d2d"><span style="color:#ff6b9d">家計簿</span></h1>
   </div>
   <div class="month-nav">
     <button onclick="changeMonth(-1)">‹</button>
@@ -822,25 +822,7 @@ function renderSummary() {
   el.style.color = bal >= 0 ? 'var(--mint)' : 'var(--pink)';
 }
 
-function renderBudget() {
-  const exp = monthTxs().filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-  document.getElementById('bUsed').textContent = fmt(exp);
-  const alertArea = document.getElementById('alertArea');
-  if (!budget) {
-    document.getElementById('bLimit').textContent = '上限未設定';
-    document.getElementById('bBar').style.width = '0%';
-    alertArea.innerHTML = '';
-    return;
-  }
-  const pct = Math.min(100, (exp / budget) * 100);
-  const color = pct >= 100 ? 'var(--pink)' : pct >= 80 ? '#ffa500' : 'var(--mint)';
-  document.getElementById('bLimit').textContent = '/ ' + fmt(budget);
-  document.getElementById('bBar').style.width = pct + '%';
-  document.getElementById('bBar').style.background = color;
-  if (pct >= 100) alertArea.innerHTML = `<div class="alert-pill over" style="margin-bottom:8px">⚠ 予算超過！ ${Math.round(pct)}% 使用</div>`;
-  else if (pct >= 80) alertArea.innerHTML = `<div class="alert-pill" style="margin-bottom:8px">△ 予算の${Math.round(pct)}%を使用中</div>`;
-  else alertArea.innerHTML = '';
-}
+function renderBudget() { /* 月間予算セクション削除済 */ }
 
 function renderDebts() {
   const el = document.getElementById('debtList');
