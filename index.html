@@ -829,6 +829,20 @@ let tab = 'list';
 let txs = [];
 let budget = 0;
 let debts = [];
+let assets = {
+  accounts: [
+    { id: 1, name: '西日本シティ銀行', balance: 0, note: '' },
+    { id: 2, name: 'その他口座', balance: 0, note: '' },
+  ],
+  cash: 0,
+  securities: [
+    { id: 1, name: '楽天証券', balance: 0, note: '' },
+  ]
+};
+let cardAccountMap = {
+  'アプラス': null, 'JCB': null, 'メルカリ': null, 'Yahoo': null,
+  'Amazon': null, 'au': null, 'Paidy': null, 'セブン': null, '西日本シティ銀行': null, '奨学金': null, '自転車': null, 'その他': null
+};
 let payingDebtId = null;
 
 const CARD_COLORS = ['#ff6b9d','#4da6ff','#ffd93d','#00c896','#a78bfa','#ff7c5c'];
@@ -1595,25 +1609,12 @@ function saveEdit() {
 
 // TX EDIT MODAL - click outside
 document.getElementById('editOverlay').addEventListener('click', function(e) { if (e.target === this) closeEditModal(); });
+
+// Click outside to close other overlays
+['budgetOverlay','debtOverlay','payOverlay','simOverlay','assetOverlay'].forEach(id => {
   document.getElementById(id).addEventListener('click', function(e) { if (e.target === this) this.classList.remove('open'); });
 });
 
-// ASSETS
-let assets = {
-  accounts: [
-    { id: 1, name: '西日本シティ銀行', balance: 0, note: '' },
-    { id: 2, name: 'その他口座', balance: 0, note: '' },
-  ],
-  cash: 0,
-  securities: [
-    { id: 1, name: '楽天証券', balance: 0, note: '' },
-  ]
-};
-// カード → 口座ID のマッピング（null = 自動引落なし）
-let cardAccountMap = {
-  'アプラス': null, 'JCB': null, 'メルカリ': null, 'Yahoo': null,
-  'Amazon': null, 'au': null, 'Paidy': null, 'セブン': null, '西日本シティ銀行': null, '奨学金': null, '自転車': null, 'その他': null
-};
 let editingAsset = null;
 
 function renderAssetTab() {
