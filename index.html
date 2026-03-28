@@ -779,9 +779,15 @@
   <div class="modal">
     <h2>返済を記録 ✅</h2>
     <p id="payModalDesc"></p>
-    <div class="fg">
-      <label>返済金額 ¥</label>
-      <input type="number" id="payAmt" placeholder="0" min="0">
+    <div class="form-row">
+      <div class="fg">
+        <label>日付</label>
+        <input type="date" id="payDate">
+      </div>
+      <div class="fg">
+        <label>返済金額 ¥</label>
+        <input type="number" id="payAmt" placeholder="0" min="0">
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closePayModal()">キャンセル</button>
@@ -848,10 +854,24 @@
 
 <!-- Debt Payment History Modal -->
 <div class="overlay" id="debtHistOverlay">
-  <div class="modal" style="width:420px;max-height:80vh;overflow-y:auto">
+  <div class="modal" style="width:460px;max-height:85vh;overflow-y:auto">
     <h2 id="debtHistTitle">返済履歴 📋</h2>
     <div id="debtHistBody"></div>
-    <div class="modal-actions" style="margin-top:14px">
+    <div style="margin-top:14px;padding-top:12px;border-top:1.5px solid var(--border)">
+      <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">返済を追加</div>
+      <div class="form-row">
+        <div class="fg">
+          <label>日付</label>
+          <input type="date" id="histAddDate">
+        </div>
+        <div class="fg">
+          <label>金額 ¥</label>
+          <input type="number" id="histAddAmt" placeholder="0" min="0">
+        </div>
+      </div>
+      <button class="add-btn" style="margin-top:6px" onclick="addHistEntry()">＋ 追加する</button>
+    </div>
+    <div class="modal-actions" style="margin-top:10px">
       <button class="btn-save" style="background:var(--text2)" onclick="document.getElementById('debtHistOverlay').classList.remove('open')">閉じる</button>
     </div>
   </div>
@@ -1609,18 +1629,21 @@ function openPayModal(id) {
   const suggested = d.payMethod === 'slide' ? calcSlidePayment(d.remaining) : (d.monthly || 0);
   document.getElementById('payModalDesc').textContent = `${d.card}（${d.type === 'ribo' ? 'リボ' : 'キャッシング'}）残高: ${fmt(d.remaining)}`;
   document.getElementById('payAmt').value = suggested || '';
+  document.getElementById('payDate').value = new Date().toISOString().split('T')[0];
   document.getElementById('payOverlay').classList.add('open');
 }
 function closePayModal() { document.getElementById('payOverlay').classList.remove('open'); payingDebtId = null; }
 function recordPayment() {
   const amt = parseFloat(document.getElementById('payAmt').value);
+  const date = document.getElementById('payDate').value || new Date().toISOString().split('T')[0];
   if (isNaN(amt) || amt <= 0) return;
   const d = debts.find(d => d.id === payingDebtId);
   if (d) {
     const before = d.remaining;
     d.remaining = Math.max(0, d.remaining - amt);
     if (!d.payHistory) d.payHistory = [];
-    d.payHistory.push({ date: new Date().toISOString().split('T')[0], amount: amt, remaining: d.remaining, before });
+    d.payHistory.push({ hid: Date.now(), date, amount: amt, remaining: d.remaining, before });
+    d.payHistory.sort((a, b) => a.date.localeCompare(b.date));
   }
   closePayModal();
   saveData();
@@ -1660,30 +1683,106 @@ function saveDebtEdit() {
 }
 
 // DEBT HISTORY MODAL
+let histDebtId = null;
 function openDebtHistModal(id) {
-  const d = debts.find(d => d.id === id);
+  histDebtId = id;
+  document.getElementById('histAddDate').value = new Date().toISOString().split('T')[0];
+  document.getElementById('histAddAmt').value = '';
+  refreshHistModal();
+  document.getElementById('debtHistOverlay').classList.add('open');
+}
+
+function refreshHistModal() {
+  const d = debts.find(d => d.id === histDebtId);
   if (!d) return;
   document.getElementById('debtHistTitle').textContent = `${d.card} 返済履歴 📋`;
   const hist = d.payHistory || [];
+  const totalPaid = hist.reduce((s, h) => s + h.amount, 0);
   if (!hist.length) {
-    document.getElementById('debtHistBody').innerHTML = '<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px">返済記録がありません</div>';
-  } else {
-    document.getElementById('debtHistBody').innerHTML = `
-      <div style="display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:0;border:1.5px solid var(--border);border-radius:10px;overflow:hidden;font-size:12px">
-        <div style="background:var(--bg);padding:7px 10px;font-weight:700;color:var(--text3);font-size:11px">日付</div>
-        <div style="background:var(--bg);padding:7px 10px;font-weight:700;color:var(--text3);font-size:11px;text-align:right">返済前</div>
-        <div style="background:var(--bg);padding:7px 10px;font-weight:700;color:var(--pink);font-size:11px;text-align:right">返済額</div>
-        <div style="background:var(--bg);padding:7px 10px;font-weight:700;color:var(--text3);font-size:11px;text-align:right">残高</div>
-        ${[...hist].reverse().map((h, i) => `
-          <div style="padding:7px 10px;border-top:1px solid var(--border);color:var(--text2)">${h.date}</div>
-          <div style="padding:7px 10px;border-top:1px solid var(--border);text-align:right;color:var(--text2);font-family:'Nunito',sans-serif;font-weight:700">${fmt(h.before)}</div>
-          <div style="padding:7px 10px;border-top:1px solid var(--border);text-align:right;color:var(--pink);font-family:'Nunito',sans-serif;font-weight:700">-${fmt(h.amount)}</div>
-          <div style="padding:7px 10px;border-top:1px solid var(--border);text-align:right;color:var(--mint);font-family:'Nunito',sans-serif;font-weight:700">${fmt(h.remaining)}</div>
-        `).join('')}
-      </div>
-      <div style="margin-top:10px;font-size:12px;color:var(--text3);text-align:right">総返済額: <span style="font-family:'Nunito',sans-serif;font-weight:800;color:var(--pink)">${fmt(hist.reduce((s,h)=>s+h.amount,0))}</span></div>`;
+    document.getElementById('debtHistBody').innerHTML = '<div style="color:var(--text3);font-size:13px;text-align:center;padding:16px">返済記録がありません</div>';
+    return;
   }
-  document.getElementById('debtHistOverlay').classList.add('open');
+  document.getElementById('debtHistBody').innerHTML = `
+    <div style="border:1.5px solid var(--border);border-radius:10px;overflow:hidden;font-size:12px">
+      <div style="display:grid;grid-template-columns:90px 1fr 1fr 1fr 64px;background:var(--bg);border-bottom:1.5px solid var(--border)">
+        <div style="padding:7px 8px;font-weight:700;color:var(--text3);font-size:11px">日付</div>
+        <div style="padding:7px 8px;font-weight:700;color:var(--text3);font-size:11px;text-align:right">返済前</div>
+        <div style="padding:7px 8px;font-weight:700;color:var(--pink);font-size:11px;text-align:right">返済額</div>
+        <div style="padding:7px 8px;font-weight:700;color:var(--mint);font-size:11px;text-align:right">残高</div>
+        <div style="padding:7px 8px"></div>
+      </div>
+      ${[...hist].reverse().map(h => `
+        <div style="display:grid;grid-template-columns:90px 1fr 1fr 1fr 64px;border-top:1px solid var(--border);align-items:center" id="hrow_${h.hid}">
+          <div style="padding:6px 8px">
+            <input type="date" value="${h.date}" onchange="editHistEntry(${histDebtId},${h.hid},'date',this.value)"
+              style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--text);width:100%">
+          </div>
+          <div style="padding:6px 8px;text-align:right;color:var(--text2);font-family:'Nunito',sans-serif;font-weight:700">${fmt(h.before)}</div>
+          <div style="padding:6px 8px;text-align:right">
+            <input type="number" value="${h.amount}" min="0" onchange="editHistEntry(${histDebtId},${h.hid},'amount',this.value)"
+              style="font-size:12px;padding:2px 4px;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--pink);font-weight:700;width:80px;text-align:right">
+          </div>
+          <div style="padding:6px 8px;text-align:right;color:var(--mint);font-family:'Nunito',sans-serif;font-weight:700">${fmt(h.remaining)}</div>
+          <div style="padding:6px 8px;text-align:center">
+            <button onclick="deleteHistEntry(${histDebtId},${h.hid})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:2px 5px;border-radius:4px" onmouseover="this.style.color='var(--pink)'" onmouseout="this.style.color='var(--text3)'">×</button>
+          </div>
+        </div>`).join('')}
+    </div>
+    <div style="margin-top:8px;font-size:12px;color:var(--text3);text-align:right">
+      総返済額: <span style="font-family:'Nunito',sans-serif;font-weight:800;color:var(--pink)">${fmt(totalPaid)}</span>
+      　現在残高: <span style="font-family:'Nunito',sans-serif;font-weight:800;color:var(--coral)">${fmt(d.remaining)}</span>
+    </div>`;
+}
+
+function editHistEntry(debtId, hid, field, val) {
+  const d = debts.find(d => d.id === debtId);
+  if (!d || !d.payHistory) return;
+  const h = d.payHistory.find(h => h.hid === hid);
+  if (!h) return;
+  if (field === 'date') {
+    h.date = val;
+    d.payHistory.sort((a, b) => a.date.localeCompare(b.date));
+  } else if (field === 'amount') {
+    const newAmt = parseFloat(val) || 0;
+    const diff = newAmt - h.amount;
+    h.amount = newAmt;
+    h.remaining = Math.max(0, h.remaining - diff);
+    // 最新の残高をdebt残高に反映
+    d.remaining = d.payHistory[d.payHistory.length - 1].remaining;
+  }
+  saveData();
+  refreshHistModal();
+  if (tab === 'debt') renderDebtTab();
+}
+
+function deleteHistEntry(debtId, hid) {
+  const d = debts.find(d => d.id === debtId);
+  if (!d || !d.payHistory) return;
+  const h = d.payHistory.find(h => h.hid === hid);
+  if (!h) return;
+  // 残高を戻す
+  d.remaining = Math.min(d.original, d.remaining + h.amount);
+  d.payHistory = d.payHistory.filter(h => h.hid !== hid);
+  saveData();
+  refreshHistModal();
+  if (tab === 'debt') renderDebtTab();
+}
+
+function addHistEntry() {
+  const d = debts.find(d => d.id === histDebtId);
+  if (!d) return;
+  const date = document.getElementById('histAddDate').value || new Date().toISOString().split('T')[0];
+  const amt = parseFloat(document.getElementById('histAddAmt').value);
+  if (isNaN(amt) || amt <= 0) return;
+  if (!d.payHistory) d.payHistory = [];
+  const before = d.remaining;
+  d.remaining = Math.max(0, d.remaining - amt);
+  d.payHistory.push({ hid: Date.now(), date, amount: amt, remaining: d.remaining, before });
+  d.payHistory.sort((a, b) => a.date.localeCompare(b.date));
+  document.getElementById('histAddAmt').value = '';
+  saveData();
+  refreshHistModal();
+  if (tab === 'debt') renderDebtTab();
 }
 
 // SIMULATION
